@@ -8,82 +8,6 @@
 
 import CxxHash
 
-public struct xxHash128Digest: Sendable, Hashable, Equatable, Codable {
-    public static let empty = xxHash128Digest()
-
-    let value: XXH_NAMESPACEXXH128_hash_t
-
-    init(_ value: XXH_NAMESPACEXXH128_hash_t) {
-        self.value = value
-    }
-
-    init() {
-        value = .init(low64: 0, high64: 0)
-    }
-
-    public init(from decoder: any Decoder) throws {
-        var container = try decoder.unkeyedContainer()
-        let digest = (
-            try container.decode(UInt8.self), // 1
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self), // 8
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self),
-            try container.decode(UInt8.self), // 16
-        )
-
-        let canonical = XXH_NAMESPACEXXH128_canonical_t(digest: digest)
-        let hash = withUnsafePointer(to: canonical) { ptr in
-            XXH_INLINE_XXH128_hashFromCanonical(ptr)
-        }
-        self.value = hash
-    }
-
-    public func encode(to encoder: any Encoder) throws {
-        var canonical: XXH_NAMESPACEXXH128_canonical_t = .init()
-        withUnsafeMutablePointer(to: &canonical) { ptr in
-            XXH_INLINE_XXH128_canonicalFromHash(ptr, value)
-        }
-
-        var container = encoder.unkeyedContainer()
-        try container.encode(canonical.digest.0)
-        try container.encode(canonical.digest.1)
-        try container.encode(canonical.digest.2)
-        try container.encode(canonical.digest.3)
-        try container.encode(canonical.digest.4)
-        try container.encode(canonical.digest.5)
-        try container.encode(canonical.digest.6)
-        try container.encode(canonical.digest.7)
-        try container.encode(canonical.digest.8)
-        try container.encode(canonical.digest.9)
-        try container.encode(canonical.digest.10)
-        try container.encode(canonical.digest.11)
-        try container.encode(canonical.digest.12)
-        try container.encode(canonical.digest.13)
-        try container.encode(canonical.digest.14)
-        try container.encode(canonical.digest.15)
-    }
-
-    public func hash(into hasher: inout Hasher) {
-        hasher.combine(value.high64)
-        hasher.combine(value.low64)
-    }
-
-    public static func == (lhs: xxHash128Digest, rhs: xxHash128Digest) -> Bool {
-        lhs.value.high64 == rhs.value.high64 && lhs.value.low64 == lhs.value.low64
-    }
-}
-
 public struct xxHash128 {
     var state: OpaquePointer
 
@@ -105,9 +29,7 @@ public struct xxHash128 {
     }
 
     public mutating func combine<T: FixedWidthInteger>(_ value: T) {
-        withUnsafePointer(to: value.bigEndian) {
-            self.combine(UnsafeRawBufferPointer(start: $0, count: 1))
-        }
+        withUnsafePointer(to: value.bigEndian) { ptr in self.combine(UnsafeRawBufferPointer(start: ptr, count: 1)) }
     }
 
     public mutating func combine(_ value: Bool) {
@@ -131,23 +53,23 @@ public struct xxHash128 {
     }
 
     public mutating func combine<T: Collection>(_ value: T) where T.Element: FixedWidthInteger {
-        for unit in value { combine(unit) }
+        withUnsafeBytes(of: value, { ptr in combine(ptr) })
     }
 
     public mutating func combine<T: Collection>(_ value: T) where T.Element == Bool {
-        for unit in value { combine(unit) }
+        withUnsafeBytes(of: value, { ptr in combine(ptr) })
     }
 
     public mutating func combine<T: Collection>(_ value: T) where T.Element == Float {
-        for unit in value { combine(unit) }
+        withUnsafeBytes(of: value, { ptr in combine(ptr) })
     }
 
     public mutating func combine<T: Collection>(_ value: T) where T.Element == Double {
-        for unit in value { combine(unit) }
+        withUnsafeBytes(of: value, { ptr in combine(ptr) })
     }
 
     public mutating func combine<T: Collection>(_ value: T) where T.Element == String {
-        for unit in value { combine(unit) }
+        withUnsafeBytes(of: value, { ptr in combine(ptr) })
     }
 
     public mutating func combine<T: StableHashable>(_ value: T) throws {
@@ -155,8 +77,7 @@ public struct xxHash128 {
     }
 
     public mutating func combine(_ digest: xxHash128Digest) {
-        combine(digest.value.high64)
-        combine(digest.value.low64)
+        withUnsafeBytes(of: digest.value) { ptr in combine(ptr) }
     }
 
     public consuming func finalize() -> xxHash128Digest {
@@ -164,11 +85,81 @@ public struct xxHash128 {
         return xxHash128Digest(hash)
     }
 
+    public static func digest(_ buffer: UnsafeRawBufferPointer) -> xxHash128Digest {
+        xxHash128Digest(XXH_INLINE_XXH3_128bits(buffer.baseAddress, buffer.count))
+    }
+
     public static func digest(_ data: ArraySlice<UInt8>) -> xxHash128Digest {
-        xxHash128Digest(
-            data.withUnsafeBytes({ ptr in
-                XXH_INLINE_XXH3_128bits(ptr.baseAddress, ptr.count)
-            })
-        )
+        data.withUnsafeBytes { ptr in digest(ptr) }
+    }
+
+    public static func digest(_ data: [UInt8]) -> xxHash128Digest {
+        data.withUnsafeBytes { ptr in digest(ptr) }
+    }
+
+    public static func digest<T: FixedWidthInteger>(_ value: T) -> xxHash128Digest {
+        withUnsafePointer(to: value.bigEndian) { ptr in digest(UnsafeRawBufferPointer(start: ptr, count: 1)) }
+    }
+
+    public static func digest(_ value: Bool) -> xxHash128Digest {
+        if value {
+            digest(UInt8.zero)
+        } else {
+            digest(UInt8(1))
+        }
+    }
+
+    public static func digest(_ value: Float) -> xxHash128Digest {
+        digest(value.bitPattern)
+    }
+
+    public static func digest(_ value: Double) -> xxHash128Digest {
+        digest(value.bitPattern)
+    }
+
+    public static func digest(_ value: String) -> xxHash128Digest {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: Collection>(_ value: T) -> xxHash128Digest where T.Element: FixedWidthInteger {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: Collection>(_ value: T) -> xxHash128Digest where T.Element == Bool {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: Collection>(_ value: T) -> xxHash128Digest where T.Element == Float {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: Collection>(_ value: T) -> xxHash128Digest where T.Element == Double {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: Collection>(_ value: T) -> xxHash128Digest where T.Element == String {
+        var hasher = xxHash128()
+        hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest<T: StableHashable>(_ value: T) throws -> xxHash128Digest {
+        var hasher = xxHash128()
+        try hasher.combine(value)
+        return hasher.finalize()
+    }
+
+    public static func digest(_ value: xxHash128Digest) -> xxHash128Digest {
+        withUnsafeBytes(of: value.value) { ptr in digest(ptr) }
     }
 }

@@ -8,15 +8,15 @@ let package = Package(
     products: [
         .library(
             name: "xxHash",
-            targets: ["xxHash", "CxxHash"]
+            targets: ["xxHash"]
         ),
     ],
     targets: [
         .target(
             name: "xxHash",
-            dependencies: ["CxxHash"]
+            dependencies: ["CxxHash"],
         ),
-        .target(
+        .systemLibrary(
             name: "CxxHash"
         ),
         .testTarget(
